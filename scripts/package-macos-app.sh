@@ -23,6 +23,12 @@ mkdir -p "$app_path/Contents/MacOS" "$app_path/Contents/Resources"
 cp "$executable" "$app_path/Contents/MacOS/SpeechProvider"
 cp "Packaging/Info.plist" "$app_path/Contents/Info.plist"
 cp -R "$resources_bundle" "$app_path/Contents/Resources/"
+xcrun actool Assets.xcassets \
+  --compile "$app_path/Contents/Resources" \
+  --platform macosx \
+  --minimum-deployment-target 26.4 \
+  --app-icon AppIcon \
+  --output-partial-info-plist /private/tmp/SpeechProvider-asset-info.plist
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $app_version" "$app_path/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $build_number" "$app_path/Contents/Info.plist"
 

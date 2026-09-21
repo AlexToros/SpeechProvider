@@ -90,6 +90,12 @@ private struct ContentView: View {
                 }
             }
 
+            Picker("Переводить на", selection: $coordinator.selectedTargetLanguage) {
+                ForEach(ConversationLanguage.allCases) { language in
+                    Text(language.title).tag(language)
+                }
+            }
+
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text("Длина фразы")
@@ -168,7 +174,12 @@ private struct ContentView: View {
                 }
                 .onChange(of: coordinator.utterances.count) { _, _ in
                     guard isConversationAtBottom else { return }
-                    withAnimation(.easeOut(duration: 0.2)) {
+                    DispatchQueue.main.async {
+                        proxy.scrollTo(ConversationScroll.bottomID, anchor: .bottom)
+                    }
+                }
+                .onAppear {
+                    DispatchQueue.main.async {
                         proxy.scrollTo(ConversationScroll.bottomID, anchor: .bottom)
                     }
                 }
@@ -300,13 +311,10 @@ private struct LaunchScreenView: View {
                 switch bootstrapper.state {
                 case .preparing:
                     VStack(spacing: 10) {
-                        if let progress = bootstrapper.progress {
+                        if bootstrapper.progress != nil {
                             ProgressView()
                                 .controlSize(.large)
                                 .tint(.white)
-                            Text("\(Int((progress * 100).rounded()))%")
-                                .font(.headline.monospacedDigit())
-                                .foregroundStyle(.white)
                         } else {
                             ProgressView()
                                 .controlSize(.large)
@@ -340,10 +348,6 @@ private struct LaunchScreenView: View {
 private final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
-        NSApp.applicationIconImage = NSImage(
-            systemSymbolName: "captions.bubble.fill",
-            accessibilityDescription: "Speech Provider"
-        )
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -363,7 +367,7 @@ private struct UtteranceRow: View {
                 .font(.callout)
             if let russianText = utterance.russianText, russianText != utterance.originalText {
                 Text(russianText)
-                    .font(.callout)
+                    .font(.system(size: 18, weight: .medium))
                     .foregroundStyle(.secondary)
             }
         }

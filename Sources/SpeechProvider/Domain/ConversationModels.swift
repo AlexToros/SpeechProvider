@@ -35,6 +35,16 @@ enum ConversationLanguage: String, CaseIterable, Identifiable, Sendable {
         case .russian: "Русский"
         }
     }
+
+    static var systemDefault: Self {
+        let preferredLocale = Locale.preferredLanguages.first ?? Locale.current.identifier
+        return systemLanguage(for: preferredLocale)
+    }
+
+    static func systemLanguage(for localeIdentifier: String) -> Self {
+        let languageCode = Locale(identifier: localeIdentifier).language.languageCode?.identifier
+        return languageCode.flatMap(Self.init(rawValue:)) ?? .russian
+    }
 }
 
 struct Utterance: Identifiable, Codable, Equatable, Sendable {

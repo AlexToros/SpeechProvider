@@ -40,7 +40,12 @@ final class ConversationCoordinator: ObservableObject {
             prepareTranslation(for: selectedRemoteLanguage.rawValue)
         }
     }
-    @Published var phrasePauseSeconds = 0.38 {
+    @Published var selectedTargetLanguage: ConversationLanguage {
+        didSet {
+            prepareTranslation(for: selectedRemoteLanguage.rawValue)
+        }
+    }
+    @Published var phrasePauseSeconds = 0.20 {
         didSet {
             Task { [remoteSegmenter, localSegmenter, phrasePauseSeconds] in
                 await remoteSegmenter.setEndSilenceSeconds(phrasePauseSeconds)
@@ -81,6 +86,7 @@ final class ConversationCoordinator: ObservableObject {
     private var modelPreparationTask: Task<Void, Never>?
     private var nllbPreparationTask: Task<Void, Never>?
     private var nllbPreparationObservationTask: Task<Void, Never>?
+    private var translationTasks: [UUID: Task<Void, Never>] = [:]
     private var conversationGeneration = 0
 
     init(
@@ -92,8 +98,14 @@ final class ConversationCoordinator: ObservableObject {
     ) {
         self.systemCapture = systemCapture
         self.microphoneCapture = microphoneCapture
-        remoteSegmenter = EnergyVADSegmenter(speaker: .remote)
-        localSegmenter = EnergyVADSegmenter(speaker: .local)
+        remoteSegmenter = EnergyVADSegmenter(
+            speaker: .remote,
+            configuration: .init(endSilenceSeconds: 0.20)
+        )
+        localSegmenter = EnergyVADSegmenter(
+            speaker: .local,
+            configuration: .init(endSilenceSeconds: 0.20)
+        )
         scheduler = TranscriptionScheduler(engine: transcriptionEngine)
         languageTracker = LanguageTracker()
         self.nllbTranslation = nllbTranslation
@@ -101,6 +113,7 @@ final class ConversationCoordinator: ObservableObject {
         systemTranslation = AppleTranslationProvider()
         modelPreparationEvents = (transcriptionEngine as? any TranscriptionPreparationProgressReporting)?.preparationProgress
         nllbPreparationEvents = nllbTranslation.preparationProgress
+        selectedTargetLanguage = .systemDefault
         translationBackend = TranslationBackend(
             rawValue: UserDefaults.standard.string(forKey: "translationBackend") ?? ""
         ) ?? .system
@@ -117,14 +130,17 @@ final class ConversationCoordinator: ObservableObject {
         }
     }
 
-    func preparePopularTranslations() {
+    func prepareDefaultTranslation() {
         guard translationBackend == .system else { return }
-        translationStatus = "Системные языковые пакеты будут использоваться по требованию"
+        let systemLanguage = selectedTargetLanguage.rawValue
+        translationStatus = systemLanguage == "en"
+            ? "Системный перевод загрузит только нужную пару"
+            : "По умолчанию нужна только пара en ↔ \(systemLanguage)"
     }
 
     func prepareTranslation(for remoteLanguage: String) {
         if translationBackend == .system {
-            translationStatus = "Системный перевод готовится для \(remoteLanguage)"
+            translationStatus = "Системный перевод: \(remoteLanguage) → \(selectedTargetLanguage.rawValue)"
         } else {
             startNLLBPreparation()
         }
@@ -138,7 +154,7 @@ final class ConversationCoordinator: ObservableObject {
         case .nllb:
             startNLLBPreparation()
         case .system:
-            preparePopularTranslations()
+            prepareDefaultTranslation()
         }
 
         do {
@@ -176,6 +192,8 @@ final class ConversationCoordinator: ObservableObject {
 
     func resetConversation() async {
         conversationGeneration &+= 1
+        translationTasks.values.forEach { $0.cancel() }
+        translationTasks.removeAll(keepingCapacity: true)
         await scheduler.resetConversation()
         await remoteSegmenter.resetConversation()
         await localSegmenter.resetConversation()
@@ -255,7 +273,7 @@ final class ConversationCoordinator: ObservableObject {
         case .nllb:
             startNLLBPreparation()
         case .system:
-            preparePopularTranslations()
+            prepareDefaultTranslation()
         }
     }
 
@@ -268,6 +286,7 @@ final class ConversationCoordinator: ObservableObject {
         let resultGeneration = conversationGeneration
         switch result {
         case let .failure(error):
+            guard resultGeneration == conversationGeneration else { return }
             state = .failed(error.localizedDescription)
         case let .success(transcribed):
             let language = await languageTracker.language(
@@ -290,27 +309,7 @@ final class ConversationCoordinator: ObservableObject {
                 languageConfidence: transcribed.transcription.languageConfidence
             )
 
-            if language != "ru" {
-                do {
-                    switch translationBackend {
-                    case .nllb:
-                        utterance.russianText = try await nllbTranslation.translate(
-                            text: utterance.originalText,
-                            from: language,
-                            to: "ru"
-                        )
-                    case .system:
-                        utterance.russianText = try await systemTranslation.translate(
-                            text: utterance.originalText,
-                            from: language,
-                            to: "ru"
-                        )
-                    }
-                } catch {
-                    utterance.russianText = nil
-                    translationStatus = error.localizedDescription
-                }
-            } else {
+            if language == selectedTargetLanguage.rawValue {
                 utterance.russianText = utterance.originalText
             }
 
@@ -320,9 +319,71 @@ final class ConversationCoordinator: ObservableObject {
                 utterances.removeFirst(utterances.count - 500)
             }
             if utterance.speaker == .remote {
-                overlay.update(text: utterance.russianText ?? utterance.originalText)
+                overlay.append(id: utterance.id, originalText: utterance.originalText)
             }
+            guard language != selectedTargetLanguage.rawValue else { return }
+            startTranslation(
+                for: utterance,
+                sourceLanguage: language,
+                targetLanguage: selectedTargetLanguage.rawValue,
+                backend: translationBackend,
+                conversationGeneration: resultGeneration
+            )
         }
     }
 
+    private func startTranslation(
+        for utterance: Utterance,
+        sourceLanguage: String,
+        targetLanguage: String,
+        backend: TranslationBackend,
+        conversationGeneration: Int
+    ) {
+        let task = Task { @MainActor [weak self, nllbTranslation, systemTranslation] in
+            defer {
+                self?.translationTasks[utterance.id] = nil
+            }
+            do {
+                let translatedText: String
+                switch backend {
+                case .nllb:
+                    translatedText = try await nllbTranslation.translate(
+                        text: utterance.originalText,
+                        from: sourceLanguage,
+                        to: targetLanguage
+                    )
+                case .system:
+                    translatedText = try await systemTranslation.translate(
+                        text: utterance.originalText,
+                        from: sourceLanguage,
+                        to: targetLanguage
+                    )
+                }
+                guard !Task.isCancelled else { return }
+                self?.applyTranslation(
+                    translatedText,
+                    to: utterance.id,
+                    conversationGeneration: conversationGeneration
+                )
+            } catch {
+                guard !Task.isCancelled,
+                      self?.conversationGeneration == conversationGeneration else { return }
+                self?.translationStatus = error.localizedDescription
+            }
+        }
+        translationTasks[utterance.id] = task
+    }
+
+    private func applyTranslation(
+        _ translatedText: String,
+        to utteranceID: UUID,
+        conversationGeneration: Int
+    ) {
+        guard conversationGeneration == self.conversationGeneration,
+              let index = utterances.firstIndex(where: { $0.id == utteranceID }) else { return }
+        utterances[index].russianText = translatedText
+        if utterances[index].speaker == .remote {
+            overlay.setTranslation(id: utteranceID, text: translatedText)
+        }
+    }
 }

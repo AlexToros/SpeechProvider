@@ -1,99 +1,123 @@
-# Speech Provider
+<p align="center">
+  <img src="Assets.xcassets/AppIcon.appiconset/icon_512x512.png" width="128" alt="Speech Provider icon">
+</p>
 
-Speech Provider — настольное macOS-приложение для живого перевода разговоров. Оно отдельно слушает системный звук собеседника и микрофон, распознаёт речь локально на Mac и показывает перевод в основном окне или поверх других приложений.
+<h1 align="center">Speech Provider</h1>
 
-Проект полезен для звонков, интервью, встреч и разговоров на иностранном языке: не нужно отправлять аудио на сторонний сервис распознавания.
+<p align="center">
+  Live, on-device speech recognition and translation for macOS conversations.
+</p>
 
-## Что умеет
+<p align="center">
+  <a href="https://github.com/AlexToros/SpeechProvider/releases/latest"><strong>Download the latest release</strong></a>
+  ·
+  <a href="#installation">Installation</a>
+  ·
+  <a href="#system-requirements">Requirements</a>
+</p>
 
-- Захватывать системный звук целиком или звук выбранного приложения.
-- Отдельно распознавать речь собеседника и пользователя с микрофона.
-- Автоматически определять язык собеседника и переводить его фразы на русский.
-- Переводить вручную введённый русский ответ на язык собеседника — Enter отправляет перевод.
-- Показывать две последние реплики в изменяемом по размеру overlay-окне.
-- По желанию делать overlay доступным или недоступным для видеозахвата.
-- Делить поток речи на более короткие или длинные фразы с помощью настройки паузы.
-- Работать с системным переводом macOS или с локальной моделью NLLB как альтернативным backend.
+<p align="center">
+  <img src="https://github.com/AlexToros/SpeechProvider/actions/workflows/release.yml/badge.svg" alt="Build status">
+  <a href="https://github.com/AlexToros/SpeechProvider/releases"><img src="https://img.shields.io/github/v/release/AlexToros/SpeechProvider?display_name=tag" alt="Latest release"></a>
+</p>
 
-Аудиозапись и история аудио не сохраняются. Модель распознавания Whisper скачивается при первом запуске и затем переиспользуется.
+Speech Provider listens to your call's system audio and your microphone as separate sources, transcribes speech locally on your Mac, detects the other person's language, and translates it into a selected target language. The target defaults to your macOS system language. It is made for calls, interviews, meetings, and everyday conversations where low latency and privacy matter.
 
-## Что потребуется
+Audio is not recorded or stored. The Whisper model is downloaded once on first use and reused afterwards.
 
-- Mac с Apple Silicon.
-- macOS 26.4 или новее. Приложение использует современный Apple Translation framework.
-- Разрешения macOS на запись экрана (для системного аудио) и доступ к микрофону.
-- Подключение к интернету при первом запуске — только для загрузки модели Whisper и, при необходимости, языковых пакетов macOS.
+## Latest release
 
-## Первый запуск и загрузки
+**[Download Speech Provider for macOS](https://github.com/AlexToros/SpeechProvider/releases/latest)**
 
-Приложение не поставляется вместе с тяжёлой моделью распознавания, поэтому первый запуск дольше обычного:
+The release page contains a ZIP archive with `Speech Provider.app`. New tagged versions are built and published automatically by GitHub Actions.
 
-1. Speech Provider самостоятельно скачивает и прогревает локальную модель Whisper. Индикатор в стартовом окне показывает этап и прогресс. При следующих запусках модель не скачивается повторно.
-2. При выбранном «Системном переводе macOS» система может показать собственный запрос на загрузку языкового пакета для нужной пары, например английский ↔ русский. Его нужно подтвердить. macOS хранит пакет и повторно его не загружает.
-3. При выборе альтернативы «Локальная нейросеть NLLB» приложение самостоятельно создаёт отдельное Python-окружение и скачивает модель перевода. Это тоже однократная загрузка; её состояние видно в окне приложения.
+## Highlights
 
-Интернет не нужен для распознавания и перевода после того, как необходимые модели и системные языковые пакеты уже установлены.
+- Capture all system audio or choose a specific application's audio.
+- Keep the remote side and your microphone as separate conversation streams.
+- Automatically detect the remote speaker's language and adapt the source language selector while the conversation is running.
+- Default the target language to the current macOS system locale, with a dropdown to change it at any time.
+- Translate a typed Russian reply into the other person's language — press Enter to send it.
+- Mirror the complete remote-audio transcript in a resizable, always-on-top overlay. The original text appears as soon as Whisper finishes a phrase; the translation is filled in afterwards without blocking later captions.
+- Choose whether the overlay is visible to screen capture.
+- Tune phrase length with a silence-duration slider.
+- Use either macOS on-device translation or the optional local NLLB backend.
 
-### Где лежат скачанные файлы
+## System requirements
 
-| Что | Путь |
+| Requirement | Minimum |
+| --- | --- |
+| Hardware | Apple Silicon Mac |
+| Operating system | macOS 26.4 or newer |
+| Permissions | Screen Recording for system audio; Microphone for your side of the conversation |
+| Internet | Required only for first-time model and language-pack downloads |
+
+Speech Provider uses the current Apple Translation framework, which is why macOS 26.4 is the minimum supported version.
+
+## Installation
+
+1. [Download the latest ZIP archive](https://github.com/AlexToros/SpeechProvider/releases/latest).
+2. Unzip it and move `Speech Provider.app` to `/Applications`.
+3. Open the app and grant the requested Screen Recording and Microphone permissions.
+
+Release builds are ad-hoc signed, not notarized with an Apple Developer certificate. If Gatekeeper blocks the first launch, Control-click the app in Finder, choose **Open**, then confirm the dialog. You can also allow it in **System Settings → Privacy & Security**.
+
+## First launch and downloads
+
+The app deliberately keeps large models out of the release archive. On first use it may download the following components:
+
+1. **Whisper recognition model.** Speech Provider downloads and warms up the local Whisper model. The launch screen shows the current stage. It is not downloaded again on future launches.
+2. **macOS translation language packs.** With the default system translation backend, the only default pair is English ↔ your macOS system language. Speech Provider does not request a bundle of languages up front. If Whisper detects another language during a call, or if you choose another target language, macOS may ask for that specific pair when it is first needed. Confirm the system prompt once; macOS reuses the package later.
+3. **Optional NLLB translation model.** Selecting the local NLLB backend makes the app create an isolated Python environment and download its translation model. Its status is shown in the app.
+
+Once the required models and language packs are installed, recognition and translation run without an internet connection.
+
+### Download locations
+
+| Component | Location |
 | --- | --- |
 | Whisper `large-v3-turbo` | `~/Documents/huggingface/models/argmaxinc/whisperkit-coreml/openai_whisper-large-v3-v20240930_turbo/` |
-| Локальное Python-окружение NLLB | `~/Library/Application Support/SpeechProvider/nllb-venv/` |
-| Модель NLLB | `~/Library/Application Support/SpeechProvider/Models/nllb-200-distilled-600M-ct2/` |
-| Языковые пакеты Apple Translation | Управляются самой macOS; приложение не выбирает и не меняет их путь. Удалять их вручную не нужно. |
+| NLLB Python environment | `~/Library/Application Support/SpeechProvider/nllb-venv/` |
+| NLLB model | `~/Library/Application Support/SpeechProvider/Models/nllb-200-distilled-600M-ct2/` |
+| Apple Translation language packs | Managed by macOS. Speech Provider does not choose or modify their location. |
 
-Эти пути относятся к текущей версии приложения и WhisperKit. Удаление папки Whisper или NLLB освободит место, но при следующем использовании соответствующая модель будет скачана заново.
+Deleting the Whisper or NLLB folders frees disk space, but the corresponding component will be downloaded again when it is next needed.
 
-## Установка
+## How it works
 
-1. Откройте раздел [Releases](../../releases) и скачайте архив `SpeechProvider-macOS-<версия>.zip`.
-2. Распакуйте его и перенесите `Speech Provider.app` в папку «Программы».
-3. Откройте приложение. При первом запуске macOS запросит разрешения, а приложение загрузит модель распознавания.
-
-Сборки из GitHub Actions подписаны ad-hoc, а не сертификатом Apple Developer. Если Gatekeeper заблокирует первый запуск, откройте приложение через Finder с удержанием Control и выберите «Открыть», либо подтвердите запуск в «Конфиденциальность и безопасность».
-
-## Актуальный релиз
-
-[Скачать последнюю версию Speech Provider](https://github.com/AlexToros/SpeechProvider/releases/latest)
-
-На странице релиза находится ZIP с приложением. Если новая версия ещё собирается, она появится здесь автоматически после успешного завершения GitHub Actions.
-
-## Как это устроено
-
-| Задача | Технология |
+| Job | Technology |
 | --- | --- |
-| Интерфейс | SwiftUI и AppKit |
-| Захват системного аудио | ScreenCaptureKit |
-| Захват микрофона | AVAudioEngine |
-| Распознавание речи | WhisperKit, Core ML и модель Whisper `large-v3-turbo` |
-| Определение языка | Whisper |
-| Перевод по умолчанию | Apple Translation, on-device language packs |
-| Альтернативный перевод | NLLB-200 через CTranslate2 |
-| Overlay | non-activating `NSPanel` |
+| Interface | SwiftUI + AppKit |
+| System audio capture | ScreenCaptureKit |
+| Microphone capture | AVAudioEngine |
+| Speech recognition | WhisperKit, Core ML, Whisper `large-v3-turbo` |
+| Language detection | Whisper |
+| Default translation | Apple Translation on-device language packs |
+| Optional translation | NLLB-200 through CTranslate2 |
+| Overlay | Non-activating `NSPanel` |
 
-Whisper различает потоки «вы» и «собеседник», потому что микрофон и системный звук захватываются отдельно. Он не выполняет diarization: несколько людей в одном системном аудиопотоке не будут автоматически подписаны по именам.
+Whisper can distinguish **your** stream from the **remote** stream because they are captured separately. It does not perform speaker diarization: several people mixed into the same system-audio stream are not automatically identified by name.
 
-## Разработка
+## Development
 
-Нужны Xcode 27 и macOS SDK 27.
+Xcode 27 and the macOS 27 SDK are required to build the project locally.
 
 ```zsh
 swift test
 swift run
 ```
 
-Чтобы создать устанавливаемый `.app` локально:
+Build an installable app archive locally:
 
 ```zsh
 zsh scripts/package-macos-app.sh
 ```
 
-Архив появится в `dist/`. Эта папка намеренно не хранится в репозитории.
+The resulting ZIP is written to `dist/`, which is intentionally ignored by Git.
 
-## Автоматические сборки
+## Continuous delivery
 
-Workflow [Build macOS release](.github/workflows/release.yml) запускается вручную и при публикации тега формата `v*`.
+The [Build macOS release](.github/workflows/release.yml) workflow runs manually and for every `v*` tag.
 
-- Каждый запуск проверяет тесты и прикладывает ZIP с `.app` как artifact.
-- Тег `v1.2.3` дополнительно создаёт GitHub Release и прикрепляет к нему ZIP.
+- Every run executes the test suite and uploads a ZIP artifact.
+- A tag such as `v1.2.3` also creates a GitHub Release and attaches the ZIP.

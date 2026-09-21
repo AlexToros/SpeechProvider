@@ -2,6 +2,17 @@ import XCTest
 @testable import SpeechProvider
 
 final class ConversationModelsTests: XCTestCase {
+    func testSupportedLanguageUsesLocaleLanguageCode() {
+        XCTAssertEqual(
+            ConversationLanguage.systemLanguage(for: "de-DE"),
+            .german
+        )
+        XCTAssertEqual(
+            ConversationLanguage.systemLanguage(for: "uk-UA"),
+            .russian
+        )
+    }
+
     func testAudioSourceIdentityIsStable() {
         XCTAssertEqual(AudioSource.system.id, "system")
         XCTAssertEqual(

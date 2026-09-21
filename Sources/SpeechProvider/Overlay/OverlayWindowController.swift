@@ -8,6 +8,7 @@ final class OverlayWindowController {
     private let sizeDefaults = UserDefaults.standard
     private let widthKey = "overlayWidth"
     private let heightKey = "overlayHeight"
+    private var captions: [OverlayCaption] = []
 
     init() {
         let defaultSize = NSSize(width: 1240, height: 260)
@@ -34,7 +35,7 @@ final class OverlayWindowController {
         panel.ignoresMouseEvents = false
         panel.sharingType = .none
 
-        hostingView = DraggableHostingView(rootView: OverlayCaptionView(previousText: "", currentText: ""))
+        hostingView = DraggableHostingView(rootView: OverlayCaptionView(captions: []))
         hostingView.onResize = { [sizeDefaults, widthKey, heightKey] size in
             sizeDefaults.set(size.width, forKey: widthKey)
             sizeDefaults.set(size.height, forKey: heightKey)
@@ -55,13 +56,27 @@ final class OverlayWindowController {
         panel.sharingType = isAvailable ? .readOnly : .none
     }
 
-    func update(text: String) {
-        let previousText = hostingView.rootView.currentText
-        hostingView.rootView = OverlayCaptionView(previousText: previousText, currentText: text)
+    func append(id: UUID, originalText: String) {
+        captions.append(.init(id: id, originalText: originalText))
+        if captions.count > 500 {
+            captions.removeFirst(captions.count - 500)
+        }
+        renderCaptions()
+    }
+
+    func setTranslation(id: UUID, text: String) {
+        guard let index = captions.firstIndex(where: { $0.id == id }) else { return }
+        captions[index].russianText = text
+        renderCaptions()
     }
 
     func clear() {
-        hostingView.rootView = OverlayCaptionView(previousText: "", currentText: "")
+        captions.removeAll(keepingCapacity: true)
+        renderCaptions()
+    }
+
+    private func renderCaptions() {
+        hostingView.rootView = OverlayCaptionView(captions: captions)
     }
 }
 
@@ -144,28 +159,50 @@ private final class DraggableHostingView: NSHostingView<OverlayCaptionView> {
     }
 }
 
+private struct OverlayCaption: Identifiable, Equatable {
+    let id: UUID
+    let originalText: String
+    var russianText: String?
+}
+
 private struct OverlayCaptionView: View {
-    let previousText: String
-    let currentText: String
+    let captions: [OverlayCaption]
 
     var body: some View {
         GeometryReader { geometry in
             let scale = min(geometry.size.width / 1240, geometry.size.height / 260)
-            let currentFontSize = min(72, max(18, 46 * scale))
-            VStack(spacing: max(4, 8 * scale)) {
-                if !previousText.isEmpty {
-                    Text(previousText)
-                        .font(.system(size: currentFontSize * 0.68, weight: .medium))
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(.white.opacity(0.52))
+            let originalFontSize = min(44, max(16, 28 * scale))
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: max(5, 8 * scale)) {
+                        ForEach(captions) { caption in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(caption.originalText)
+                                    .font(.system(size: originalFontSize, weight: .semibold))
+                                    .foregroundStyle(.white)
+                                if let russianText = caption.russianText,
+                                   russianText != caption.originalText {
+                                    Text(russianText)
+                                        .font(.system(size: originalFontSize * 0.82, weight: .medium))
+                                        .foregroundStyle(.white.opacity(0.64))
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        Color.clear
+                            .frame(height: 1)
+                            .id("overlay-bottom")
+                    }
+                    .padding(max(6, 10 * scale))
                 }
-                Text(currentText)
-                    .font(.system(size: currentFontSize, weight: .semibold))
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.white)
+                .scrollIndicators(.hidden)
+                .onAppear {
+                    proxy.scrollTo("overlay-bottom", anchor: .bottom)
+                }
+                .onChange(of: captions) { _, _ in
+                    proxy.scrollTo("overlay-bottom", anchor: .bottom)
+                }
             }
-            .padding(max(6, 10 * scale))
-            .frame(width: geometry.size.width, height: geometry.size.height)
         }
         .background(.black.opacity(0.78), in: RoundedRectangle(cornerRadius: 16))
         .padding(2)
