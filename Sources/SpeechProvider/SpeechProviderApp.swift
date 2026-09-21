@@ -23,7 +23,7 @@ struct SpeechProviderApp: App {
 private struct ContentView: View {
     @ObservedObject var coordinator: ConversationCoordinator
     @StateObject private var manualTranslation = ManualTranslationController()
-    @State private var isConversationAtBottom = true
+    @State private var followsConversation = true
 
     var body: some View {
         VStack(spacing: 16) {
@@ -150,14 +150,18 @@ private struct ContentView: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .onScrollGeometryChange(for: Bool.self) { geometry in
-                        geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 1
-                    } action: { _, isAtBottom in
-                        isConversationAtBottom = isAtBottom
+                    .onScrollPhaseChange { _, newPhase, context in
+                        // Content growth is not a user scroll. Only update the
+                        // follow mode when a real scrolling interaction settles.
+                        guard newPhase == .idle else { return }
+                        let geometry = context.geometry
+                        followsConversation = geometry.contentOffset.y + geometry.containerSize.height
+                            >= geometry.contentSize.height - 2
                     }
 
-                    if !isConversationAtBottom {
+                    if !followsConversation {
                         Button {
+                            followsConversation = true
                             withAnimation(.easeOut(duration: 0.2)) {
                                 proxy.scrollTo(ConversationScroll.bottomID, anchor: .bottom)
                             }
@@ -173,7 +177,7 @@ private struct ContentView: View {
                     }
                 }
                 .onChange(of: coordinator.utterances.count) { _, _ in
-                    guard isConversationAtBottom else { return }
+                    guard followsConversation else { return }
                     DispatchQueue.main.async {
                         proxy.scrollTo(ConversationScroll.bottomID, anchor: .bottom)
                     }
