@@ -43,7 +43,7 @@ final class OverlayWindowController {
                 previousText: "",
                 currentText: "",
                 typingID: UUID(),
-                typingIntervalNanoseconds: { 0 },
+                typingDurationNanoseconds: { 0 },
                 onTypingFinished: { _ in }
             )
         )
@@ -102,11 +102,16 @@ final class OverlayWindowController {
             previousText: previousText,
             currentText: currentText,
             typingID: typingID,
-            typingIntervalNanoseconds: { [weak self] in
-                guard let self else { return 18_000_000 }
-                // One pending caption already means that the visible caption is
-                // no longer the newest one, so shorten its remaining animation.
-                return self.queuedTexts.count >= 1 ? 6_000_000 : 18_000_000
+            typingDurationNanoseconds: { [weak self] in
+                guard let self else { return 2_000_000_000 }
+                switch self.queuedTexts.count {
+                case 0...1:
+                    return 2_000_000_000
+                case 2:
+                    return 1_500_000_000
+                default:
+                    return 1_000_000_000
+                }
             },
             onTypingFinished: { [weak self] captionID in
                 self?.finishTyping(captionID: captionID)
@@ -198,7 +203,7 @@ private struct OverlayCaptionView: View {
     let previousText: String
     let currentText: String
     let typingID: UUID
-    let typingIntervalNanoseconds: () -> UInt64
+    let typingDurationNanoseconds: () -> UInt64
     let onTypingFinished: (UUID) -> Void
     @State private var typedCurrentText = ""
 
@@ -210,13 +215,15 @@ private struct OverlayCaptionView: View {
                 if !previousText.isEmpty {
                     Text(previousText)
                         .font(.system(size: currentFontSize * 0.68, weight: .medium))
-                        .multilineTextAlignment(.center)
+                        .multilineTextAlignment(.leading)
                         .foregroundStyle(.white.opacity(0.52))
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 Text(typedCurrentText)
                     .font(.system(size: currentFontSize, weight: .semibold))
-                    .multilineTextAlignment(.center)
+                    .multilineTextAlignment(.leading)
                     .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(max(6, 10 * scale))
             .frame(width: geometry.size.width, height: geometry.size.height)
@@ -226,10 +233,12 @@ private struct OverlayCaptionView: View {
         .help("Перетащите субтитры; потяните нижний правый угол для изменения размера")
         .task(id: typingID) {
             typedCurrentText = ""
+            let characterCount = UInt64(max(currentText.count, 1))
             for character in currentText {
                 guard !Task.isCancelled else { return }
                 typedCurrentText.append(character)
-                try? await Task.sleep(nanoseconds: typingIntervalNanoseconds())
+                let interval = typingDurationNanoseconds() / characterCount
+                try? await Task.sleep(nanoseconds: interval)
             }
             guard !Task.isCancelled else { return }
             onTypingFinished(typingID)
