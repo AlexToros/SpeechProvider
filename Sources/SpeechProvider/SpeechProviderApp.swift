@@ -71,7 +71,7 @@ private struct ContentView: View {
                 Button("Начать") {
                     Task { await coordinator.start() }
                 }
-                .disabled(coordinator.availableSources.isEmpty || isBusy)
+                .disabled(coordinator.availableSources.isEmpty || isBusy || isListening)
 
                 Button("Остановить") {
                     Task { await coordinator.stop() }
@@ -323,6 +323,10 @@ private struct LaunchScreenView: View {
                         Text(bootstrapper.message)
                             .font(.callout)
                             .foregroundStyle(.white.opacity(0.82))
+                            .multilineTextAlignment(.center)
+                        Text("Проверка и подготовка модели при первом запуске может занять несколько минут.")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.66))
                             .multilineTextAlignment(.center)
                     }
                     .frame(width: 360)
