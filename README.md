@@ -38,7 +38,7 @@ The release page contains a ZIP archive with `Speech Provider.app`. New tagged v
 - Automatically detect the remote speaker's language and adapt the source language selector while the conversation is running.
 - Default the target language to the current macOS system locale, with a dropdown to change it at any time.
 - Translate a typed Russian reply into the other person's language — press Enter to send it.
-- Mirror the complete remote-audio transcript in a resizable, always-on-top overlay. The original text appears as soon as Whisper finishes a phrase; the translation is filled in afterwards without blocking later captions.
+- Show the two latest translated remote captions in a resizable, always-on-top overlay. Captions type in sequentially, and a small pending queue preserves completed translations when speech arrives faster than the overlay can display it.
 - Choose whether the overlay is visible to screen capture.
 - Tune phrase length with a silence-duration slider.
 - Use either macOS on-device translation or the optional local NLLB backend.

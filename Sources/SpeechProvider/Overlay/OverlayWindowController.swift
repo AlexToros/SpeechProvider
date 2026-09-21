@@ -8,7 +8,10 @@ final class OverlayWindowController {
     private let sizeDefaults = UserDefaults.standard
     private let widthKey = "overlayWidth"
     private let heightKey = "overlayHeight"
-    private var captions: [OverlayCaption] = []
+    private var previousText = ""
+    private var currentText = ""
+    private var queuedTexts = CaptionQueue<String>()
+    private var activeCaptionID: UUID?
 
     init() {
         let defaultSize = NSSize(width: 1240, height: 260)
@@ -35,7 +38,15 @@ final class OverlayWindowController {
         panel.ignoresMouseEvents = false
         panel.sharingType = .none
 
-        hostingView = DraggableHostingView(rootView: OverlayCaptionView(captions: []))
+        hostingView = DraggableHostingView(
+            rootView: OverlayCaptionView(
+                previousText: "",
+                currentText: "",
+                typingID: UUID(),
+                typingIntervalNanoseconds: { 0 },
+                onTypingFinished: { _ in }
+            )
+        )
         hostingView.onResize = { [sizeDefaults, widthKey, heightKey] size in
             sizeDefaults.set(size.width, forKey: widthKey)
             sizeDefaults.set(size.height, forKey: heightKey)
@@ -56,27 +67,51 @@ final class OverlayWindowController {
         panel.sharingType = isAvailable ? .readOnly : .none
     }
 
-    func append(id: UUID, originalText: String) {
-        captions.append(.init(id: id, originalText: originalText))
-        if captions.count > 500 {
-            captions.removeFirst(captions.count - 500)
-        }
-        renderCaptions()
-    }
-
-    func setTranslation(id: UUID, text: String) {
-        guard let index = captions.firstIndex(where: { $0.id == id }) else { return }
-        captions[index].russianText = text
-        renderCaptions()
+    func enqueue(text: String) {
+        queuedTexts.append(text)
+        showNextCaptionIfPossible()
     }
 
     func clear() {
-        captions.removeAll(keepingCapacity: true)
-        renderCaptions()
+        previousText = ""
+        currentText = ""
+        queuedTexts = CaptionQueue()
+        activeCaptionID = nil
+        renderCaptions(typingID: UUID())
     }
 
-    private func renderCaptions() {
-        hostingView.rootView = OverlayCaptionView(captions: captions)
+    private func showNextCaptionIfPossible() {
+        guard activeCaptionID == nil, let nextText = queuedTexts.popFirst() else { return }
+        if !currentText.isEmpty {
+            previousText = currentText
+        }
+        currentText = nextText
+        let captionID = UUID()
+        activeCaptionID = captionID
+        renderCaptions(typingID: captionID)
+    }
+
+    private func finishTyping(captionID: UUID) {
+        guard activeCaptionID == captionID else { return }
+        activeCaptionID = nil
+        showNextCaptionIfPossible()
+    }
+
+    private func renderCaptions(typingID: UUID) {
+        hostingView.rootView = OverlayCaptionView(
+            previousText: previousText,
+            currentText: currentText,
+            typingID: typingID,
+            typingIntervalNanoseconds: { [weak self] in
+                guard let self else { return 18_000_000 }
+                // One pending caption already means that the visible caption is
+                // no longer the newest one, so shorten its remaining animation.
+                return self.queuedTexts.count >= 1 ? 6_000_000 : 18_000_000
+            },
+            onTypingFinished: { [weak self] captionID in
+                self?.finishTyping(captionID: captionID)
+            }
+        )
     }
 }
 
@@ -159,53 +194,67 @@ private final class DraggableHostingView: NSHostingView<OverlayCaptionView> {
     }
 }
 
-private struct OverlayCaption: Identifiable, Equatable {
-    let id: UUID
-    let originalText: String
-    var russianText: String?
-}
-
 private struct OverlayCaptionView: View {
-    let captions: [OverlayCaption]
+    let previousText: String
+    let currentText: String
+    let typingID: UUID
+    let typingIntervalNanoseconds: () -> UInt64
+    let onTypingFinished: (UUID) -> Void
+    @State private var typedCurrentText = ""
 
     var body: some View {
         GeometryReader { geometry in
             let scale = min(geometry.size.width / 1240, geometry.size.height / 260)
-            let originalFontSize = min(44, max(16, 28 * scale))
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: max(5, 8 * scale)) {
-                        ForEach(captions) { caption in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(caption.originalText)
-                                    .font(.system(size: originalFontSize, weight: .semibold))
-                                    .foregroundStyle(.white)
-                                if let russianText = caption.russianText,
-                                   russianText != caption.originalText {
-                                    Text(russianText)
-                                        .font(.system(size: originalFontSize * 0.82, weight: .medium))
-                                        .foregroundStyle(.white.opacity(0.64))
-                                }
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        Color.clear
-                            .frame(height: 1)
-                            .id("overlay-bottom")
-                    }
-                    .padding(max(6, 10 * scale))
+            let currentFontSize = min(72, max(18, 46 * scale))
+            VStack(spacing: max(4, 8 * scale)) {
+                if !previousText.isEmpty {
+                    Text(previousText)
+                        .font(.system(size: currentFontSize * 0.68, weight: .medium))
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.white.opacity(0.52))
                 }
-                .scrollIndicators(.hidden)
-                .onAppear {
-                    proxy.scrollTo("overlay-bottom", anchor: .bottom)
-                }
-                .onChange(of: captions) { _, _ in
-                    proxy.scrollTo("overlay-bottom", anchor: .bottom)
-                }
+                Text(typedCurrentText)
+                    .font(.system(size: currentFontSize, weight: .semibold))
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.white)
             }
+            .padding(max(6, 10 * scale))
+            .frame(width: geometry.size.width, height: geometry.size.height)
         }
         .background(.black.opacity(0.78), in: RoundedRectangle(cornerRadius: 16))
         .padding(2)
         .help("Перетащите субтитры; потяните нижний правый угол для изменения размера")
+        .task(id: typingID) {
+            typedCurrentText = ""
+            for character in currentText {
+                guard !Task.isCancelled else { return }
+                typedCurrentText.append(character)
+                try? await Task.sleep(nanoseconds: typingIntervalNanoseconds())
+            }
+            guard !Task.isCancelled else { return }
+            onTypingFinished(typingID)
+        }
+    }
+}
+
+private struct CaptionQueue<Element> {
+    private var storage: [Element] = []
+    private var head = 0
+
+    var count: Int { storage.count - head }
+
+    mutating func append(_ element: Element) {
+        storage.append(element)
+    }
+
+    mutating func popFirst() -> Element? {
+        guard head < storage.count else { return nil }
+        let element = storage[head]
+        head += 1
+        if head >= 32, head * 2 >= storage.count {
+            storage.removeFirst(head)
+            head = 0
+        }
+        return element
     }
 }

@@ -87,6 +87,9 @@ final class ConversationCoordinator: ObservableObject {
     private var nllbPreparationTask: Task<Void, Never>?
     private var nllbPreparationObservationTask: Task<Void, Never>?
     private var translationTasks: [UUID: Task<Void, Never>] = [:]
+    private var remoteTranslationOrder: [UUID] = []
+    private var remoteTranslationOrderHead = 0
+    private var readyRemoteTranslations: [UUID: String] = [:]
     private var conversationGeneration = 0
 
     init(
@@ -194,6 +197,9 @@ final class ConversationCoordinator: ObservableObject {
         conversationGeneration &+= 1
         translationTasks.values.forEach { $0.cancel() }
         translationTasks.removeAll(keepingCapacity: true)
+        remoteTranslationOrder.removeAll(keepingCapacity: true)
+        remoteTranslationOrderHead = 0
+        readyRemoteTranslations.removeAll(keepingCapacity: true)
         await scheduler.resetConversation()
         await remoteSegmenter.resetConversation()
         await localSegmenter.resetConversation()
@@ -315,13 +321,21 @@ final class ConversationCoordinator: ObservableObject {
 
             guard resultGeneration == conversationGeneration else { return }
             utterances.append(utterance)
+            if utterance.speaker == .remote {
+                remoteTranslationOrder.append(utterance.id)
+                if let translatedText = utterance.russianText {
+                    readyRemoteTranslations[utterance.id] = translatedText
+                }
+            }
             if utterances.count > 500 {
                 utterances.removeFirst(utterances.count - 500)
             }
-            if utterance.speaker == .remote {
-                overlay.append(id: utterance.id, originalText: utterance.originalText)
+            guard language != selectedTargetLanguage.rawValue else {
+                if utterance.speaker == .remote {
+                    enqueueReadyOverlayTranslations()
+                }
+                return
             }
-            guard language != selectedTargetLanguage.rawValue else { return }
             startTranslation(
                 for: utterance,
                 sourceLanguage: language,
@@ -383,7 +397,23 @@ final class ConversationCoordinator: ObservableObject {
               let index = utterances.firstIndex(where: { $0.id == utteranceID }) else { return }
         utterances[index].russianText = translatedText
         if utterances[index].speaker == .remote {
-            overlay.setTranslation(id: utteranceID, text: translatedText)
+            readyRemoteTranslations[utteranceID] = translatedText
+            enqueueReadyOverlayTranslations()
+        }
+    }
+
+    private func enqueueReadyOverlayTranslations() {
+        while remoteTranslationOrderHead < remoteTranslationOrder.count {
+            let utteranceID = remoteTranslationOrder[remoteTranslationOrderHead]
+            guard let translatedText = readyRemoteTranslations.removeValue(forKey: utteranceID) else { break }
+            overlay.enqueue(text: translatedText)
+            remoteTranslationOrderHead += 1
+        }
+
+        if remoteTranslationOrderHead >= 32,
+           remoteTranslationOrderHead * 2 >= remoteTranslationOrder.count {
+            remoteTranslationOrder.removeFirst(remoteTranslationOrderHead)
+            remoteTranslationOrderHead = 0
         }
     }
 }
