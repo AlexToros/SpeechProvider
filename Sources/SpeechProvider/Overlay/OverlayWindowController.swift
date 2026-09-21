@@ -230,10 +230,13 @@ private struct OverlayCaptionView: View {
         .task(id: typingID) {
             typedCurrentText = ""
             let characterCount = UInt64(max(currentText.count, 1))
-            for character in currentText {
+            for (index, character) in currentText.enumerated() {
                 guard !Task.isCancelled else { return }
                 typedCurrentText.append(character)
-                let interval = typingDurationNanoseconds() / characterCount
+                // The pause belongs between characters. Waiting after the final
+                // character made the next queued caption start visibly late.
+                guard index + 1 < currentText.count else { continue }
+                let interval = typingDurationNanoseconds() / max(characterCount - 1, 1)
                 try? await Task.sleep(nanoseconds: interval)
             }
             guard !Task.isCancelled else { return }

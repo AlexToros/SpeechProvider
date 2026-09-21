@@ -8,6 +8,8 @@ actor AppleTranslationProvider: TranslationProvider {
         let target: Locale.Language
     }
 
+    private var preparedSessions: [LanguagePair: TranslationSession] = [:]
+
     func prepare() async throws {}
 
     func translate(text: String, from source: String, to target: String) async throws -> String {
@@ -24,6 +26,10 @@ actor AppleTranslationProvider: TranslationProvider {
     }
 
     private func session(for pair: LanguagePair) async throws -> TranslationSession {
+        if let preparedSession = preparedSessions[pair] {
+            return preparedSession
+        }
+
         let availability = LanguageAvailability(preferredStrategy: .lowLatency)
         guard await availability.status(from: pair.source, to: pair.target) == .installed else {
             throw AppleTranslationError.languagePairNotInstalled
@@ -35,6 +41,7 @@ actor AppleTranslationProvider: TranslationProvider {
             preferredStrategy: .lowLatency
         )
         try await session.prepareTranslation()
+        preparedSessions[pair] = session
         return session
     }
 }
