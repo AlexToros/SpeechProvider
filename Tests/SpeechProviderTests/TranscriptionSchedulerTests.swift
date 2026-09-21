@@ -52,6 +52,21 @@ final class TranscriptionSchedulerTests: XCTestCase {
         XCTAssertEqual(transcribed.segment.startedAt, Date(timeIntervalSinceReferenceDate: 1))
     }
 
+    func testDoesNotStarveLocalSegmentsWhileRemoteAudioContinues() async {
+        let engine = BlockingBatchEngine()
+        let scheduler = TranscriptionScheduler(engine: engine)
+
+        await scheduler.submit(segment(at: 0, speaker: .remote))
+        await engine.waitForFirstBatch()
+        await scheduler.submit(segment(at: 1, speaker: .remote))
+        await scheduler.submit(segment(at: 2, speaker: .local))
+        await engine.releaseFirstBatch()
+        await engine.waitForBatchCount(2)
+
+        let batches = await engine.recordedBatches()
+        XCTAssertEqual(batches[1].map(\.speaker), [.local])
+    }
+
     private func firstResult(
         from results: AsyncStream<Result<TranscribedSegment, Error>>,
         timeoutNanoseconds: UInt64
@@ -73,9 +88,9 @@ final class TranscriptionSchedulerTests: XCTestCase {
         }
     }
 
-    private func segment(at offset: TimeInterval) -> AudioSegment {
+    private func segment(at offset: TimeInterval, speaker: Speaker = .remote) -> AudioSegment {
         AudioSegment(
-            speaker: .remote,
+            speaker: speaker,
             samples: Array(repeating: 0.1, count: 1_600),
             sampleRate: 16_000,
             startedAt: Date(timeIntervalSinceReferenceDate: offset),
@@ -124,5 +139,9 @@ private actor BlockingBatchEngine: BatchTranscriptionEngine {
 
     func batchSizes() -> [Int] {
         batches.map(\.count)
+    }
+
+    func recordedBatches() -> [[AudioSegment]] {
+        batches
     }
 }

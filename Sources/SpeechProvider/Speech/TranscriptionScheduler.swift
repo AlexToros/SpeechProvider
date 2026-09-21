@@ -14,6 +14,7 @@ actor TranscriptionScheduler {
     private var localQueue = FIFOQueue<AudioSegment>()
     private var isProcessing = false
     private var conversationGeneration = 0
+    private var remoteBatchesSinceLocal = 0
 
     init(engine: any BatchTranscriptionEngine) {
         self.engine = engine
@@ -46,6 +47,7 @@ actor TranscriptionScheduler {
         conversationGeneration &+= 1
         remoteQueue = FIFOQueue()
         localQueue = FIFOQueue()
+        remoteBatchesSinceLocal = 0
     }
 
     private func drain() async {
@@ -73,7 +75,22 @@ actor TranscriptionScheduler {
     }
 
     private func nextSegment() -> AudioSegment? {
-        remoteQueue.popFirst() ?? localQueue.popFirst()
+        if !remoteQueue.isEmpty, !localQueue.isEmpty {
+            if remoteBatchesSinceLocal >= 1 {
+                remoteBatchesSinceLocal = 0
+                return localQueue.popFirst()
+            }
+            remoteBatchesSinceLocal += 1
+            return remoteQueue.popFirst()
+        }
+
+        if let remote = remoteQueue.popFirst() {
+            remoteBatchesSinceLocal += 1
+            return remote
+        }
+
+        remoteBatchesSinceLocal = 0
+        return localQueue.popFirst()
     }
 
     private func nextBatch(startingWith first: AudioSegment, maximumCount: Int) -> [AudioSegment] {
