@@ -5,12 +5,14 @@ actor WhisperKitTranscriptionEngine: TranscriptionPreparationProgressReporting {
     static let defaultModel = "large-v3-v20240930_turbo"
 
     private let model: String
+    private let modelFolderDefaultsKey: String
     nonisolated let preparationProgress: AsyncStream<ModelPreparationProgress>
     private let preparationProgressContinuation: AsyncStream<ModelPreparationProgress>.Continuation
     private var whisperKit: WhisperKit?
 
     init(model: String = defaultModel) {
         self.model = model
+        modelFolderDefaultsKey = "whisperModelFolder.\(model)"
         let stream = AsyncStream<ModelPreparationProgress>.makeStream(bufferingPolicy: .bufferingNewest(1))
         preparationProgress = stream.stream
         preparationProgressContinuation = stream.continuation
@@ -18,6 +20,29 @@ actor WhisperKitTranscriptionEngine: TranscriptionPreparationProgressReporting {
 
     func prepare() async throws {
         guard whisperKit == nil else { return }
+        let modelFolder = try await resolvedModelFolder()
+        preparationProgressContinuation.yield(.init(fractionCompleted: nil, message: "Загружаю модель в память…"))
+        let configuration = WhisperKitConfig(
+            model: model,
+            modelFolder: modelFolder.path,
+            verbose: false,
+            prewarm: true,
+            load: true,
+            download: false
+        )
+        whisperKit = try await WhisperKit(configuration)
+        preparationProgressContinuation.yield(.init(fractionCompleted: 1, message: "Распознавание готово"))
+    }
+
+    private func resolvedModelFolder() async throws -> URL {
+        if let localFolder = localModelFolder() {
+            preparationProgressContinuation.yield(.init(
+                fractionCompleted: 1,
+                message: "Использую уже скачанную модель распознавания…"
+            ))
+            return localFolder
+        }
+
         preparationProgressContinuation.yield(.init(fractionCompleted: 0, message: "Проверяю модель распознавания…"))
         let modelFolder = try await WhisperKit.download(variant: model) { [preparationProgressContinuation] progress in
             let fraction = min(1, max(0, progress.fractionCompleted))
@@ -30,17 +55,29 @@ actor WhisperKitTranscriptionEngine: TranscriptionPreparationProgressReporting {
             }
             preparationProgressContinuation.yield(.init(fractionCompleted: fraction, message: message))
         }
-        preparationProgressContinuation.yield(.init(fractionCompleted: nil, message: "Загружаю модель в память…"))
-        let configuration = WhisperKitConfig(
-            model: model,
-            modelFolder: modelFolder.path,
-            verbose: false,
-            prewarm: true,
-            load: true,
-            download: false
-        )
-        whisperKit = try await WhisperKit(configuration)
-        preparationProgressContinuation.yield(.init(fractionCompleted: 1, message: "Распознавание готово"))
+        UserDefaults.standard.set(modelFolder.path, forKey: modelFolderDefaultsKey)
+        return modelFolder
+    }
+
+    private func localModelFolder() -> URL? {
+        let defaultsFolder = UserDefaults.standard.string(forKey: modelFolderDefaultsKey)
+            .map { URL(fileURLWithPath: $0) }
+        let documentsFolder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
+            .first?
+            .appending(path: "huggingface/models/argmaxinc/whisperkit-coreml/openai_whisper-\(model)")
+
+        return [defaultsFolder, documentsFolder]
+            .compactMap { $0 }
+            .first(where: hasRequiredModelFiles)
+    }
+
+    private func hasRequiredModelFiles(in folder: URL) -> Bool {
+        let fileManager = FileManager.default
+        return ["MelSpectrogram", "AudioEncoder", "TextDecoder"].allSatisfy { component in
+            let compiled = folder.appending(path: "\(component).mlmodelc")
+            let package = folder.appending(path: "\(component).mlpackage/Data/com.apple.CoreML/model.mlmodel")
+            return fileManager.fileExists(atPath: compiled.path) || fileManager.fileExists(atPath: package.path)
+        }
     }
 
     func transcribe(_ segment: AudioSegment) async throws -> Transcription {
