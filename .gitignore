@@ -1,0 +1,24 @@
+# Swift Package Manager build products and local configuration
+.build/
+dist/
+.swiftpm/xcode/
+.swiftpm/configuration/
+
+# Xcode workspace state and derived files
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+
+# Locally installed translation runtime and downloaded model
+.venv/
+Models/
+
+# macOS Finder metadata and temporary archives
+.DS_Store
+*.zip
+
+# Local secrets and editor settings
+.env
+.env.*
+.vscode/
