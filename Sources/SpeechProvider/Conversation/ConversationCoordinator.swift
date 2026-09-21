@@ -162,6 +162,7 @@ final class ConversationCoordinator: ObservableObject {
 
         do {
             try await scheduler.prepare()
+            startTranscriptionResultTaskIfNeeded()
             let systemStream = systemCapture.chunks()
             let microphoneStream = microphoneCapture.chunks()
             startPipelineTasks(systemStream: systemStream, microphoneStream: microphoneStream)
@@ -178,15 +179,14 @@ final class ConversationCoordinator: ObservableObject {
     func stop() async {
         systemCaptureTask?.cancel()
         microphoneCaptureTask?.cancel()
-        transcriptionResultTask?.cancel()
         modelPreparationTask?.cancel()
         systemCaptureTask = nil
         microphoneCaptureTask = nil
-        transcriptionResultTask = nil
         modelPreparationTask = nil
 
         microphoneCapture.stop()
         await systemCapture.stop()
+        await discardPendingConversationWork()
         if case .failed = state {
             return
         }
@@ -194,16 +194,7 @@ final class ConversationCoordinator: ObservableObject {
     }
 
     func resetConversation() async {
-        conversationGeneration &+= 1
-        translationTasks.values.forEach { $0.cancel() }
-        translationTasks.removeAll(keepingCapacity: true)
-        remoteTranslationOrder.removeAll(keepingCapacity: true)
-        remoteTranslationOrderHead = 0
-        readyRemoteTranslations.removeAll(keepingCapacity: true)
-        await scheduler.resetConversation()
-        await remoteSegmenter.resetConversation()
-        await localSegmenter.resetConversation()
-        await languageTracker.resetConversation()
+        await discardPendingConversationWork()
         utterances.removeAll(keepingCapacity: true)
         overlay.clear()
     }
@@ -232,11 +223,28 @@ final class ConversationCoordinator: ObservableObject {
             }
         }
 
+    }
+
+    private func startTranscriptionResultTaskIfNeeded() {
+        guard transcriptionResultTask == nil else { return }
         transcriptionResultTask = Task { [weak self, results = scheduler.results] in
             for await result in results where !Task.isCancelled {
                 await self?.consumeTranscriptionResult(result)
             }
         }
+    }
+
+    private func discardPendingConversationWork() async {
+        conversationGeneration &+= 1
+        translationTasks.values.forEach { $0.cancel() }
+        translationTasks.removeAll(keepingCapacity: true)
+        remoteTranslationOrder.removeAll(keepingCapacity: true)
+        remoteTranslationOrderHead = 0
+        readyRemoteTranslations.removeAll(keepingCapacity: true)
+        await scheduler.resetConversation()
+        await remoteSegmenter.resetConversation()
+        await localSegmenter.resetConversation()
+        await languageTracker.resetConversation()
     }
 
     private func startModelPreparationObservation() {

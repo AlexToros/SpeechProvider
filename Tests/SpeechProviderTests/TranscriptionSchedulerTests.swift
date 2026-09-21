@@ -33,6 +33,25 @@ final class TranscriptionSchedulerTests: XCTestCase {
         XCTAssertNil(result)
     }
 
+    func testResetProcessesSegmentsSubmittedForTheNextConversation() async {
+        let engine = BlockingBatchEngine()
+        let scheduler = TranscriptionScheduler(engine: engine)
+        let results = scheduler.results
+
+        await scheduler.submit(segment(at: 0))
+        await engine.waitForFirstBatch()
+        await scheduler.resetConversation()
+        await scheduler.submit(segment(at: 1))
+        await engine.releaseFirstBatch()
+        await engine.waitForBatchCount(2)
+
+        let result = await firstResult(from: results, timeoutNanoseconds: 100_000_000)
+        guard case let .success(transcribed)? = result else {
+            return XCTFail("Expected a result for the segment submitted after reset")
+        }
+        XCTAssertEqual(transcribed.segment.startedAt, Date(timeIntervalSinceReferenceDate: 1))
+    }
+
     private func firstResult(
         from results: AsyncStream<Result<TranscribedSegment, Error>>,
         timeoutNanoseconds: UInt64

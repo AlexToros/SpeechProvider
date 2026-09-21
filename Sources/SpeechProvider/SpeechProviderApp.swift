@@ -145,7 +145,7 @@ private struct ContentView: View {
                                 UtteranceRow(utterance: utterance)
                             }
                             Color.clear
-                                .frame(height: 1)
+                                .frame(height: 32)
                                 .id(ConversationScroll.bottomID)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
