@@ -324,7 +324,7 @@ private struct LaunchScreenView: View {
                             .font(.callout)
                             .foregroundStyle(.white.opacity(0.82))
                             .multilineTextAlignment(.center)
-                        Text("Проверка и подготовка модели при первом запуске может занять несколько минут.")
+                        Text("Проверка и подготовка модели может занять несколько минут.")
                             .font(.caption)
                             .foregroundStyle(.white.opacity(0.66))
                             .multilineTextAlignment(.center)
