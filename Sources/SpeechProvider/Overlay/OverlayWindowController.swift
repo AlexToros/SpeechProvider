@@ -103,18 +103,14 @@ final class OverlayWindowController {
             currentText: currentText,
             typingID: typingID,
             typingDurationNanoseconds: { [weak self] in
-                guard let self else { return 2_000_000_000 }
-                switch self.queuedTexts.count {
-                case 0...1:
-                    return 2_000_000_000
-                case 2:
-                    return 1_500_000_000
-                default:
-                    return 1_000_000_000
-                }
+                OverlayTypingSchedule.duration(forPendingCaptionCount: self?.queuedTexts.count ?? 0)
             },
             onTypingFinished: { [weak self] captionID in
-                self?.finishTyping(captionID: captionID)
+                // Defer the replacement to the next main-loop turn so SwiftUI
+                // commits the final character before the next caption shifts in.
+                DispatchQueue.main.async {
+                    self?.finishTyping(captionID: captionID)
+                }
             }
         )
     }
@@ -241,7 +237,25 @@ private struct OverlayCaptionView: View {
                 try? await Task.sleep(nanoseconds: interval)
             }
             guard !Task.isCancelled else { return }
+
+            // Give SwiftUI one display turn with the complete caption before
+            // replacing this view with the next queued caption.
+            await Task.yield()
+            guard !Task.isCancelled, typedCurrentText == currentText else { return }
             onTypingFinished(typingID)
+        }
+    }
+}
+
+struct OverlayTypingSchedule {
+    static func duration(forPendingCaptionCount count: Int) -> UInt64 {
+        switch count {
+        case 0...1:
+            return 1_000_000_000
+        case 2:
+            return 850_000_000
+        default:
+            return 700_000_000
         }
     }
 }
