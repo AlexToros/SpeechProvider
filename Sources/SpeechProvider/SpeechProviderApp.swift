@@ -150,10 +150,13 @@ private struct ContentView: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .onScrollPhaseChange { _, newPhase, context in
-                        // Content growth is not a user scroll. Only update the
-                        // follow mode when a real scrolling interaction settles.
-                        guard newPhase == .idle else { return }
+                    .onScrollPhaseChange { oldPhase, newPhase, context in
+                        // Programmatic scrolling and layout changes can settle
+                        // in idle too. Only a completed user interaction is
+                        // allowed to switch between follow and manual modes.
+                        guard newPhase == .idle,
+                              oldPhase == .tracking || oldPhase == .interacting || oldPhase == .decelerating
+                        else { return }
                         let geometry = context.geometry
                         followsConversation = geometry.contentOffset.y + geometry.containerSize.height
                             >= geometry.contentSize.height - 2
@@ -332,6 +335,12 @@ private struct LaunchScreenView: View {
                             .font(.caption)
                             .foregroundStyle(.white.opacity(0.66))
                             .multilineTextAlignment(.center)
+                        if bootstrapper.message.hasPrefix("Скачиваю модель") {
+                            Text("Для загрузки нужен доступ к Hugging Face (huggingface.co). Если сервис недоступен, включите VPN и повторите попытку.")
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.78))
+                                .multilineTextAlignment(.center)
+                        }
                     }
                     .frame(width: 360)
                 case let .failed(message):

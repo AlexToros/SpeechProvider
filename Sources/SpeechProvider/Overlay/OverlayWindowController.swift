@@ -8,7 +8,7 @@ final class OverlayWindowController {
     private let sizeDefaults = UserDefaults.standard
     private let widthKey = "overlayWidth"
     private let heightKey = "overlayHeight"
-    private var previousText = ""
+    private var previousTexts: [String] = []
     private var currentText = ""
     private var queuedTexts = CaptionQueue<String>()
     private var activeCaptionID: UUID?
@@ -40,7 +40,7 @@ final class OverlayWindowController {
 
         hostingView = DraggableHostingView(
             rootView: OverlayCaptionView(
-                previousText: "",
+                previousTexts: [],
                 currentText: "",
                 typingID: UUID(),
                 typingDurationNanoseconds: { 0 },
@@ -73,7 +73,7 @@ final class OverlayWindowController {
     }
 
     func clear() {
-        previousText = ""
+        previousTexts.removeAll(keepingCapacity: true)
         currentText = ""
         queuedTexts = CaptionQueue()
         activeCaptionID = nil
@@ -83,7 +83,10 @@ final class OverlayWindowController {
     private func showNextCaptionIfPossible() {
         guard activeCaptionID == nil, let nextText = queuedTexts.popFirst() else { return }
         if !currentText.isEmpty {
-            previousText = currentText
+            previousTexts.append(currentText)
+            if previousTexts.count > 4 {
+                previousTexts.removeFirst(previousTexts.count - 4)
+            }
         }
         currentText = nextText
         let captionID = UUID()
@@ -99,7 +102,7 @@ final class OverlayWindowController {
 
     private func renderCaptions(typingID: UUID) {
         hostingView.rootView = OverlayCaptionView(
-            previousText: previousText,
+            previousTexts: previousTexts,
             currentText: currentText,
             typingID: typingID,
             typingDurationNanoseconds: { [weak self] in
@@ -196,7 +199,7 @@ private final class DraggableHostingView: NSHostingView<OverlayCaptionView> {
 }
 
 private struct OverlayCaptionView: View {
-    let previousText: String
+    let previousTexts: [String]
     let currentText: String
     let typingID: UUID
     let typingDurationNanoseconds: () -> UInt64
@@ -208,11 +211,11 @@ private struct OverlayCaptionView: View {
             let scale = min(geometry.size.width / 1240, geometry.size.height / 260)
             let currentFontSize = min(72, max(18, 46 * scale))
             VStack(spacing: max(4, 8 * scale)) {
-                if !previousText.isEmpty {
-                    Text(previousText)
+                ForEach(Array(previousTexts.enumerated()), id: \.offset) { index, text in
+                    Text(text)
                         .font(.system(size: currentFontSize * 0.68, weight: .medium))
                         .multilineTextAlignment(.leading)
-                        .foregroundStyle(.white.opacity(0.52))
+                        .foregroundStyle(.white.opacity(0.28 + 0.08 * Double(index)))
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 Text(typedCurrentText)
@@ -222,7 +225,7 @@ private struct OverlayCaptionView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(max(6, 10 * scale))
-            .frame(width: geometry.size.width, height: geometry.size.height)
+            .frame(width: geometry.size.width, height: geometry.size.height, alignment: .center)
         }
         .background(.black.opacity(0.78), in: RoundedRectangle(cornerRadius: 16))
         .padding(2)
